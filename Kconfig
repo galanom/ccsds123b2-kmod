@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+config CCSDS123B2
+	tristate "CCSDS123B2 compression module (staging)"
+	depends on STAGING
+	help
+	  Driver for the CCSDS123.0-B-2 compression IP core of Daniel Báscones.

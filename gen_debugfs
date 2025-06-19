@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+AXIL=../../hw/ccsds123b2_rtl/modules/ccsds_controller.vhd
+DATA=$(grep 'constant.*LOCALADDR' ${AXIL} | sed -n 's/^\s*constant\s\+\([A-Za-z0-9_]\+\)\s*:[^:]*:=\s*\([0-9]\+\).*/\1 \2/p' | sed 's/^C_S_AXI_REG_//; s/_LOCALADDR//')
+
+echo "#pragma once
+
+static struct {
+	const char *name;
+	u32 value;
+} entry[] = {"
+
+while IFS= read -r line; do
+	set -- $line
+	name=${1,,}
+	value=$2
+	echo "	{ \"${name}\", ${value} },"
+done <<< "$DATA"
+
+echo "};"
