@@ -9,6 +9,9 @@
 #define MODULE_NAME "ccsds123b2"
 
 
+const phys_addr_t ipcore_phys_addr = 0xA0000000;
+void *ipcore_virt_addr;
+
 static struct dentry *dbg_dir, *dbg_cfg_dir, *dbg_stats_dir, *parent_dir, *tmp_dir;
 
 static const struct file_operations fops = {
@@ -20,13 +23,13 @@ static int __init ccsds123b2_init(void)
 	// Generate debugfs entries
 	dbg_dir = debugfs_create_dir(MODULE_NAME, NULL);
 	if (!dbg_dir)
-		goto err;
+		goto err_debugfs;
 	dbg_cfg_dir = debugfs_create_dir("cfg", dbg_dir);
 	if (!dbg_cfg_dir)
-		goto err;
+		goto err_debugfs;
 	dbg_stats_dir = debugfs_create_dir("stats", dbg_dir);
 	if (!dbg_stats_dir)
-		goto err;
+		goto err_debugfs;
 
 	for (int i = 0; i < sizeof(entry)/sizeof(entry[0]); ++i) {
 		if (entry[i].value < 32)
@@ -42,12 +45,20 @@ static int __init ccsds123b2_init(void)
 			&entry[i].value,
 			&fops);
 		if (!tmp_dir)
-			goto err;
+			goto err_debugfs;
 	}
+
+	// Map AXI-Lite controller interface
+	ipcore_virt_addr = ioremap(ipcore_phys_addr, PAGE_SIZE);
+	if (!ipcore_virt_addr)
+		goto err_ioremap;
 
 	pr_info("%s: started.\n", MODULE_NAME);
 	return 0;
-err:
+err_ioremap:
+	pr_err("%s: error mapping IP core control interface address\n", MODULE_NAME);
+	return -ENOMEM;
+err_debugfs:
 	pr_err("%s: error creating debugfs entries, exiting.\n", MODULE_NAME);
 	debugfs_remove_recursive(dbg_dir);
 	return -ENOMEM;
@@ -56,6 +67,8 @@ err:
 static void __exit ccsds123b2_exit(void)
 {
 	debugfs_remove_recursive(dbg_dir);
+	if (ipcore_virt_addr)
+		iounmap(ipcore_virt_addr);
 	pr_info("%s: exited.\n", MODULE_NAME);
 }
 
