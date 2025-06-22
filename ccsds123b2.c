@@ -15,7 +15,7 @@ static const struct file_operations fops = {
 	.owner = THIS_MODULE,
 };
 
-static int __init ccsds123b2_debug_init(void)
+static int __init ccsds123b2_init(void)
 {
 	// Generate debugfs entries
 	dbg_dir = debugfs_create_dir(MODULE_NAME, NULL);
@@ -53,14 +53,14 @@ err:
 	return -ENOMEM;
 }
 
-static void __exit ccsds123b2_debug_exit(void)
+static void __exit ccsds123b2_exit(void)
 {
 	debugfs_remove_recursive(dbg_dir);
 	pr_info("%s: exited.\n", MODULE_NAME);
 }
 
-module_init(ccsds123b2_debug_init);
-module_exit(ccsds123b2_debug_exit);
+module_init(ccsds123b2_init);
+module_exit(ccsds123b2_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ioannis Galanommatis");
