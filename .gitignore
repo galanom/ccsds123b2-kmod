@@ -1,7 +1,7 @@
 *.o
 *.ko
 *.mod*
-ccsds123b2.h
+#ccsds123b2.h
 modules.order
 *symvers*
 *cmd
