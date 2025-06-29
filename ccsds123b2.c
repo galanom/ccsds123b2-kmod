@@ -4,16 +4,57 @@
 #include <linux/io.h>
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
+#include <linux/platform_device.h>
+#include <linux/of.h>
 
 #include "ccsds123b2.h"
 
 #define MODULE_NAME "ccsds123b2"
-
+#define DEV_NODE "ccsds"
 
 const phys_addr_t ipcore_phys_addr = 0xA0000000;
 void *ipcore_virt_addr;
 
 static struct dentry *dbg_dir, *dbg_cfg_dir, *dbg_stats_dir, *parent_dir, *tmp_dir;
+
+static const struct of_device_id ccsds123b2_of_match[] = {
+	{ .compatible = "xlnx,ccsds123b2" },
+	{},
+};
+
+MODULE_DEVICE_TABLE(of, ccsds123b2_of_match);
+
+static int ccsds123b2_probe(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+	//pr_info("core %d probed\n", core);
+	// Map AXI-Lite controller interface
+	// TODO this needs to go to probe
+	ipcore_virt_addr = ioremap(ipcore_phys_addr, PAGE_SIZE);
+	if (!ipcore_virt_addr)
+		goto err_ioremap;
+	return 0;
+err_ioremap:
+	pr_err("%s: error mapping IP core control interface address\n", MODULE_NAME);
+	return -ENOMEM;
+}
+
+// TODO older kernels expect return int
+static void ccsds123b2_remove(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+	//pr_info("core %d removed\n", core);
+	return;
+}
+
+static struct platform_driver ccsds123b2_driver = {
+	.probe = ccsds123b2_probe,
+	.remove = ccsds123b2_remove,
+	.driver = {
+		.name = "ccsds123b2",
+		.of_match_table = ccsds123b2_of_match,
+	},
+};
 
 static ssize_t dbg_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
 {
@@ -53,6 +94,7 @@ static const struct file_operations fops_rw = {
 
 static int __init ccsds123b2_init(void)
 {
+	int ret = 0;
 	// Generate debugfs entries
 	const struct file_operations *fops;
 
@@ -88,27 +130,32 @@ static int __init ccsds123b2_init(void)
 			goto err_debugfs;
 	}
 
-	// Map AXI-Lite controller interface
-	ipcore_virt_addr = ioremap(ipcore_phys_addr, PAGE_SIZE);
-	if (!ipcore_virt_addr)
-		goto err_ioremap;
+
+	ret = platform_driver_register(&ccsds123b2_driver);
+	if (ret)
+		goto err_plat;
 
 	pr_info("%s: started.\n", MODULE_NAME);
 	return 0;
-err_ioremap:
-	pr_err("%s: error mapping IP core control interface address\n", MODULE_NAME);
-	return -ENOMEM;
+err_plat:
+	pr_err("%s: error %d registering platform driver\n", MODULE_NAME, ret);
+	goto err_common;
 err_debugfs:
 	pr_err("%s: error creating debugfs entries, exiting.\n", MODULE_NAME);
+err_common:
 	debugfs_remove_recursive(dbg_dir);
-	return -ENOMEM;
+	return ret ? ret : -ENOMEM;
 }
+
+
+
 
 static void __exit ccsds123b2_exit(void)
 {
 	debugfs_remove_recursive(dbg_dir);
 	if (ipcore_virt_addr)
 		iounmap(ipcore_virt_addr);
+	platform_driver_unregister(&ccsds123b2_driver);
 	pr_info("%s: exited.\n", MODULE_NAME);
 }
 
