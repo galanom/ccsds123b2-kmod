@@ -13,9 +13,7 @@
 #define MODULE_NAME "ccsds123b2"
 #define DEV_NODE "ccsds"
 
-typedef u32 reg_t;
 static atomic_t cores = ATOMIC_INIT(0);
-const phys_addr_t ipcore_phys_addr = 0xA0000000;
 
 struct dev_priv {
 	int id;
@@ -26,7 +24,6 @@ struct dev_priv {
 
 static struct dentry *debugfs_dir;
 
-
 static const struct of_device_id ccsds123b2_of_match[] = {
 	{ .compatible = "xlnx,ccsds123b2" },
 	{},
@@ -34,14 +31,13 @@ static const struct of_device_id ccsds123b2_of_match[] = {
 
 MODULE_DEVICE_TABLE(of, ccsds123b2_of_match);
 
-
 static ssize_t dbg_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
 {
 	char kbuf[16];
-	void __iomem *reg = (reg_t *)file->private_data;
+	void __iomem *reg = (u32 *)file->private_data;
 	if (*ppos > 0)
 		return 0;
-	reg_t val = ioread32(reg);
+	u32 val = ioread32(reg);
 	snprintf(kbuf, 16, "%u\n", val);
 	return simple_read_from_buffer(ubuf, count, ppos, kbuf, sizeof(kbuf) - 1);
 }
@@ -49,9 +45,9 @@ static ssize_t dbg_read(struct file *file, char __user *ubuf, size_t count, loff
 static ssize_t dbg_write(struct file *file, const char __user *ubuf, size_t count, loff_t *ppos)
 {
 	int ret;
-	reg_t val;
+	u32 val;
 	char kbuf[16];
-	void __iomem *reg = (reg_t *)file->private_data;
+	void __iomem *reg = (u32 *)file->private_data;
 	if (count >= sizeof(kbuf) - 1)
 		return -EINVAL;
 	if (copy_from_user(kbuf, ubuf, count))
@@ -201,5 +197,4 @@ module_exit(ccsds123b2_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ioannis Galanommatis");
-MODULE_DESCRIPTION("ccsds123b2 driver");
-
+MODULE_DESCRIPTION("CCSDS123.0-B-2 IP core driver");
