@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#define pr_fmt(fmt) "%s[%d] " fmt, __func__, __LINE__
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/io.h>
@@ -136,10 +137,10 @@ static int ccsds123b2_probe(struct platform_device *pdev)
 	pr_info("core %d probed\n", priv->id);
 	return 0;
 err_ioremap:
-	pr_err("%s: core %d: error mapping IP core control interface address\n", MODULE_NAME, priv->id);
+	pr_err("core %d: error mapping IP core control interface address\n", priv->id);
 	return PTR_ERR(priv->vaddr);
 err_debugfs_node:
-	pr_err("%s: error creating node %d debugfs entries, exiting.\n", MODULE_NAME, priv->id);
+	pr_err("core %d: error creating debugfs entries, exiting.\n", priv->id);
 	debugfs_remove_recursive(priv->node_dir);
 	return -ENOMEM;
 }
@@ -150,7 +151,7 @@ static void ccsds123b2_remove(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct dev_priv *priv = platform_get_drvdata(pdev);
 
-	pr_info("core %d removed\n", priv->id);
+	pr_info("core %d: removed\n", priv->id);
 	return;
 }
 
@@ -174,14 +175,14 @@ static int __init ccsds123b2_init(void)
 	if (!debugfs_dir)
 		goto err_debugfs_main;
 
-	pr_info("%s: started.\n", MODULE_NAME);
+	pr_info("started.\n");
 	return 0;
 err_plat:
-	pr_err("%s: error %d registering platform driver\n", MODULE_NAME, ret);
+	pr_err("error %d registering platform driver\n", ret);
 	return ret;
 err_debugfs_main:
 	debugfs_remove_recursive(debugfs_dir);
-	pr_err("%s: error creating debugfs main directory, exiting.\n", MODULE_NAME);
+	pr_err("error creating debugfs main directory, exiting.\n");
 	return -ENOMEM;
 }
 
@@ -192,7 +193,7 @@ static void __exit ccsds123b2_exit(void)
 {
 	debugfs_remove_recursive(debugfs_dir);
 	platform_driver_unregister(&ccsds123b2_driver);
-	pr_info("%s: exited.\n", MODULE_NAME);
+	pr_info("exited.\n");
 }
 
 module_init(ccsds123b2_init);
