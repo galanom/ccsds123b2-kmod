@@ -6,20 +6,23 @@
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/platform_device.h>
+#include <linux/miscdevice.h>
 #include <linux/of.h>
 
 #include "ccsds123b2.h"
 
 #define MODULE_NAME "ccsds123b2"
-#define DEV_NODE "ccsds"
+#define CDEV_NAME "ccsds"
 
 static atomic_t cores = ATOMIC_INIT(0);
 
-struct dev_priv {
+struct dev_ctx {
 	int id;
 	struct platform_device *pdev;
+	struct miscdevice cdev;
 	struct dentry *node_dir;
-	void __iomem *vaddr;
+	void __iomem *iobase, *src_kbuf, *dst_kbuf;
+	size_t src_len, dst_len;
 };
 
 static struct dentry *debugfs_dir;
@@ -74,80 +77,98 @@ static const struct file_operations fops_rw = {
 static int ccsds123b2_probe(struct platform_device *pdev)
 {
 	char snode[2];
-	struct device_node *np = pdev->dev.of_node;
-	static struct dentry *cfg_dir, *stats_dir, *parent_dir, *tmp_dir;
-	const struct file_operations *fops;
 	struct resource *res;
-	struct dev_priv *priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
-	priv->id = atomic_fetch_add(1, &cores);
-	priv->pdev = pdev;
+	struct device_node *np = pdev->dev.of_node;
+	struct dev_ctx *ctx = devm_kzalloc(&pdev->dev, sizeof(*ctx), GFP_KERNEL);
+	struct dentry *cfg_dir, *stats_dir, *parent_dir, *tmp_dir;
+	const struct file_operations *fopsp;
+	static const struct file_operations dbg_fops_ro = {
+		.owner = THIS_MODULE,
+		.read = dbg_read,
+	};
+	static const struct file_operations dbg_fops_rw = {
+		.owner = THIS_MODULE,
+		.read = dbg_read,
+		.write = dbg_write,
+	};
+	static struct file_operations cdev_fops = {
+		.owner = THIS_MODULE,
+		.mmap = cdev_mmap,
+	};
+
+	ctx->id = atomic_fetch_add(1, &cores);
+	ctx->pdev = pdev;
 
 	// Map AXI-Lite controller interface
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		pr_err("core %d: failed to discover device I/O resources\n", priv->id);
+		pr_err("core %d: failed to discover device I/O resources\n", ctx->id);
 		return -ENODEV;
 	}
 
-	priv->vaddr = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(priv->vaddr))
+	ctx->iobase = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(ctx->iobase))
 		goto err_ioremap;
 
 	// Generate debugfs entries
-	snode[0] = priv->id + '0';	// FIXME assumes id < 10
+	snode[0] = ctx->id + '0';	// FIXME assumes id < 10
 	snode[1] = '\0';
-	priv->node_dir = debugfs_create_dir(snode, debugfs_dir);
-	if (!priv->node_dir)
+	ctx->node_dir = debugfs_create_dir(snode, debugfs_dir);
+	if (!ctx->node_dir)
 		goto err_debugfs_node;
-	cfg_dir = debugfs_create_dir("cfg", priv->node_dir);
+	cfg_dir = debugfs_create_dir("cfg", ctx->node_dir);
 	if (!cfg_dir)
 		goto err_debugfs_node;
-	stats_dir = debugfs_create_dir("stats", priv->node_dir);
+	stats_dir = debugfs_create_dir("stats", ctx->node_dir);
 	if (!stats_dir)
 		goto err_debugfs_node;
 
 	for (int i = 0; i < sizeof(entry)/sizeof(entry[0]); ++i) {
 		if (entry[i].value < 32) {
-			fops = &fops_rw;
-			parent_dir = priv->node_dir;
+			fopsp = &dbg_fops_rw;
+			parent_dir = ctx->node_dir;
 		} else if (entry[i].value < 256) {
-			fops = &fops_rw;
+			fopsp = &dbg_fops_rw;
 			parent_dir = cfg_dir;
 		} else {
-			fops = &fops_ro;
+			fopsp = &dbg_fops_ro;
 			parent_dir = stats_dir;
 		}
 
 		tmp_dir = debugfs_create_file(
-			entry[i].name,
-			0444,
-			parent_dir,
-			priv->vaddr + entry[i].value,
-			fops);
+				entry[i].name,
+				0444,
+				parent_dir,
+				ctx->iobase + entry[i].value,
+				fopsp);
 		if (!tmp_dir)
 			goto err_debugfs_node;
 	}
 
 
-	platform_set_drvdata(pdev, priv);
-	pr_info("core %d probed\n", priv->id);
+	platform_set_drvdata(pdev, ctx);
+	pr_info("core %d: probed\n", ctx->id);
 	return 0;
 err_ioremap:
-	pr_err("core %d: error mapping IP core control interface address\n", priv->id);
-	return PTR_ERR(priv->vaddr);
+	pr_err("core %d: error mapping IP core control interface address\n", ctx->id);
+	return PTR_ERR(ctx->iobase);
 err_debugfs_node:
-	pr_err("core %d: error creating debugfs entries, exiting.\n", priv->id);
-	debugfs_remove_recursive(priv->node_dir);
+	pr_err("core %d: error creating debugfs entries\n", ctx->id);
+	debugfs_remove_recursive(ctx->node_dir);
 	return -ENOMEM;
+err_miscdev:
+	pr_err("core %d: error creating device node\n", ctx->id);
+	debugfs_remove_recursive(ctx->node_dir);
+	return ret;
 }
 
 // TODO older kernels expect return int
 static void ccsds123b2_remove(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
-	struct dev_priv *priv = platform_get_drvdata(pdev);
+	struct dev_ctx *ctx = platform_get_drvdata(pdev);
 
-	pr_info("core %d: removed\n", priv->id);
+	pr_info("core %d: removed\n", ctx->id);
 	return;
 }
 
