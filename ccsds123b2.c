@@ -63,16 +63,7 @@ static ssize_t dbg_write(struct file *file, const char __user *ubuf, size_t coun
 	return count;
 }
 
-static const struct file_operations fops_ro = {
-	.owner = THIS_MODULE,
-	.read = dbg_read,
-};
 
-static const struct file_operations fops_rw = {
-	.owner = THIS_MODULE,
-	.read = dbg_read,
-	.write = dbg_write,
-};
 
 static int ccsds123b2_probe(struct platform_device *pdev)
 {
