@@ -76,6 +76,7 @@ static const struct file_operations fops_rw = {
 
 static int ccsds123b2_probe(struct platform_device *pdev)
 {
+	int ret;
 	char snode[2];
 	struct resource *res;
 	struct device_node *np = pdev->dev.of_node;
@@ -145,6 +146,13 @@ static int ccsds123b2_probe(struct platform_device *pdev)
 			goto err_debugfs_node;
 	}
 
+	// Create character device entry
+	ctx->cdev.name = CDEV_NAME;
+	ctx->cdev.minor = ctx->id;
+	ctx->cdev.fops = &cdev_fops;
+	ret = misc_register(&ctx->cdev);
+	if (ret)
+		goto err_miscdev;
 
 	platform_set_drvdata(pdev, ctx);
 	pr_info("core %d: probed\n", ctx->id);
