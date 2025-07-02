@@ -2,7 +2,9 @@
 #define pr_fmt(fmt) "%s[%d] " fmt, __func__, __LINE__
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/mm.h>
 #include <linux/io.h>
+#include <linux/dma-mapping.h>
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/platform_device.h>
@@ -63,7 +65,35 @@ static ssize_t dbg_write(struct file *file, const char __user *ubuf, size_t coun
 	return count;
 }
 
+static int cdev_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	int ret;
+	size_t size = vma->vm_end - vma->vm_start;
+	dma_addr_t dma_handle;
+	void *kbuf;
+	struct dev_ctx *ctx = container_of(file->private_data, struct dev_ctx, cdev);
+	pr_info("core %d: mmap\n", ctx->id);
 
+	kbuf = dma_alloc_coherent(&ctx->pdev->dev, size, &dma_handle, GFP_KERNEL);
+	if (!kbuf)
+		return -ENOMEM;
+
+	if (vma->vm_pgoff == 0) {
+		ctx->src_kbuf = kbuf;
+	} else {
+		ctx->dst_kbuf = kbuf;
+	}
+
+	ret = remap_pfn_range(vma,
+			vma->vm_start,
+			virt_to_phys(kbuf) >> PAGE_SHIFT,
+			size,
+			vma->vm_page_prot);
+	if (ret)
+		return -EAGAIN;
+
+	return 0;
+}
 
 static int ccsds123b2_probe(struct platform_device *pdev)
 {
